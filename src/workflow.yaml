@@ -1,0 +1,73 @@
+yawl: "0.1"
+start: select_overdue
+defaultRetryPolicy:
+  errorListMode: INCLUDE
+  errorList:
+    - STEP_TIMEOUT
+    - TIMEOUT
+    - HTTP_CALL_500
+    - HTTP_CALL_502
+    - HTTP_CALL_503
+    - HTTP_CALL_504
+    - DATABASE_QUERY_UNAVAILABLE
+    - YDB_CALL_SERVICE_UNAVAILABLE
+  initialDelay: 2s
+  backoffRate: 2.0
+  maxDelay: 30s
+  retryCount: 3
+steps:
+  select_overdue:
+    databaseQuery:
+      connection:
+        type: YDB
+        host: ydb.serverless.yandexcloud.net
+        port: 2135
+        database: /ru-central1/b1g4kvbode1blkt60bim/etn6q7eup4e04l6ond4n
+        ssl: true
+        iam: true
+      query: |-
+        SELECT id, user_id, category, status, text, created_at, updated_at
+        FROM tickets
+        WHERE status = 'open'
+          AND updated_at < CurrentUtcTimestamp() - Interval('P1D')
+      mode: QUERY
+      next: check_overdue
+  check_overdue:
+    switch:
+      choices:
+        - condition: "(.ResultSets[0] | length) > 0"
+          next: make_digest
+        - condition: "true"
+          next: done
+  make_digest:
+    aiStudioAgent:
+      promptTemplateId: fvteikvr5lokc29klh8o
+      message: 'Составь дайджест для оператора по этим просроченным заявкам: \(.ResultSets[0])'
+      autoApprove: true
+      next: mark_escalated
+  mark_escalated:
+    databaseQuery:
+      connection:
+        type: YDB
+        host: ydb.serverless.yandexcloud.net
+        port: 2135
+        database: /ru-central1/b1g4kvbode1blkt60bim/etn6q7eup4e04l6ond4n
+        ssl: true
+        iam: true
+      query: |-
+        UPDATE tickets
+        SET status = 'escalated', updated_at = CurrentUtcTimestamp()
+        WHERE status = 'open'
+          AND updated_at < CurrentUtcTimestamp() - Interval('P1D')
+      mode: EXEC
+      next: send_email
+  send_email:
+    httpCall:
+      url: "https://functions.yandexcloud.net/d4e77825lg51prc0s69t"
+      method: POST
+      headers:
+        Content-Type: application/json
+      body: '{"subject": "Дайджест просроченных заявок", "body": \(.make_digest)}'
+      next: done
+  done:
+    success: {}
