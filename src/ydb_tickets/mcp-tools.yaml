@@ -1,0 +1,21 @@
+- name: create-ticket
+  description: "Создать тикет"
+  input_json_schema: '{"type":"object","properties":{"user_id":{"type":"string"},"category":{"type":"string","enum":["bug","docs","feature","access"]},"text":{"type":"string"}},"required":["user_id","category","text"]}'
+  action:
+    function_call:
+      function_id: d4er4gsa6mdim8sqfgf7
+      tag: $latest
+- name: list-my-tickets
+  description: "Список заявок пользователя"
+  input_json_schema: '{"type":"object","properties":{"user_id":{"type":"string"}},"required":["user_id"]}'
+  action:
+    function_call:
+      function_id: d4er4gsa6mdim8sqfgf7
+      tag: $latest
+- name: append-message
+  description: "Добавить сообщение в тикет"
+  input_json_schema: '{"type":"object","properties":{"ticket_id":{"type":"string"},"role":{"type":"string","enum":["user","agent"]},"text":{"type":"string"},"model":{"type":"string"},"tokens_in":{"type":"integer"},"tokens_out":{"type":"integer"},"latency_ms":{"type":"integer"}},"required":["ticket_id","role","text"]}'
+  action:
+    function_call:
+      function_id: d4er4gsa6mdim8sqfgf7
+      tag: $latest

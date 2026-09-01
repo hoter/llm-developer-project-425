@@ -8,13 +8,14 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.utils import parseaddr
 from email.header import decode_header
-import urllib.request
-import urllib.error
 import json
 import logging
 import os
 import re
+import urllib.request
 from pathlib import Path
+
+import openai
 
 # ---------- ЗАГРУЗКА ПЕРЕМЕННЫХ ИЗ .env ----------
 def load_env(env_path='.env'):
@@ -51,11 +52,17 @@ def get_required_env(name):
 
 SMTP_HOST = get_required_env('SMTP_HOST')
 SMTP_USER = get_required_env('SMTP_USER')
-SMTP_PASS = get_required_env('SMTP_PASS')
+SMTP_PASSWORD = get_required_env('SMTP_PASSWORD')
 IMAP_HOST = get_required_env('IMAP_HOST')
 IMAP_USER = get_required_env('IMAP_USER')
-IMAP_PASS = get_required_env('IMAP_PASS')
-API_KEY   = get_required_env('YANDEX_API_KEY')
+IMAP_PASSWORD = get_required_env('IMAP_PASSWORD')
+YC_FOLDER_ID = get_required_env('YC_FOLDER_ID')
+SMTP_PORT = int(os.getenv('SMTP_PORT', '465'))
+HELPDESK_MAILBOX = os.getenv('HELPDESK_MAILBOX', SMTP_USER)
+MCP_SERVER_URL = os.getenv(
+    'MCP_SERVER_URL',
+    'https://db818p5vs9tr2fb1rdtj.5p9km096.mcpgw.serverless.yandexcloud.net/sse',
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -116,24 +123,62 @@ def get_plain_text_body(msg):
     return None
 
 
-def call_yandex_responses_api(text, api_key):
-    url = 'https://rest-assistant.api.cloud.yandex.net/v1/responses'
-    headers = {
-        'Authorization': f'Api-Key {api_key}',
-        'Content-Type': 'application/json'
-    }
-    payload = json.dumps({'text': text}).encode('utf-8')
-    req = urllib.request.Request(url, data=payload, headers=headers, method='POST')
+def load_system_prompt():
+    prompt_path = Path(__file__).with_name('agent_instructions.md')
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            resp_data = json.loads(resp.read().decode('utf-8'))
-            if 'response' in resp_data:
-                return resp_data['response']
-            elif 'result' in resp_data:
-                return resp_data['result']
-            else:
-                return json.dumps(resp_data, ensure_ascii=False)
-    except urllib.error.URLError as e:
+        return prompt_path.read_text(encoding='utf-8').strip()
+    except OSError:
+        logging.warning("Не найден файл agent_instructions.md, системный промпт пуст.")
+        return ""
+
+
+def _get_iam_token():
+    req = urllib.request.Request(
+        "http://169.254.169.254/computeMetadata/v1/instance/service-accounts/default/token",
+        headers={"Metadata-Flavor": "Google"},
+    )
+    with urllib.request.urlopen(req, timeout=5) as resp:
+        data = json.loads(resp.read().decode('utf-8'))
+    return data["access_token"]
+
+
+def call_yandex_responses_api(text):
+    iam_token = _get_iam_token()
+    client = openai.OpenAI(
+        api_key=iam_token,
+        project=YC_FOLDER_ID,
+        base_url="https://ai.api.cloud.yandex.net/v1",
+        timeout=60,
+    )
+    tools = [{
+        "type": "mcp",
+        "server_label": "ydb-tickets",
+        "server_description": "Тикеты техподдержки: создать заявку, список заявок, добавить сообщение",
+        "server_url": MCP_SERVER_URL,
+        "require_approval": "never",
+    }]
+    try:
+        logging.warning("Responses API: model=%s tools=%d server_url=%s",
+                        f"gpt://{YC_FOLDER_ID}/yandexgpt/latest", len(tools), MCP_SERVER_URL)
+        response = client.responses.create(
+            model=f"gpt://{YC_FOLDER_ID}/yandexgpt/latest",
+            instructions=load_system_prompt(),
+            tools=tools,
+            input=text,
+        )
+        summary = []
+        for item in getattr(response, 'output', []):
+            entry = {"type": getattr(item, "type", None)}
+            name = getattr(item, "name", None)
+            if name:
+                entry["name"] = name
+            if getattr(item, "type", None) == "message":
+                entry["text"] = getattr(item, "output_text", None)
+            summary.append(entry)
+        logging.warning("Responses output: %s", summary)
+        logging.warning("Responses final text: %s", (response.output_text or "")[:500])
+        return response.output_text
+    except Exception as e:
         logging.error(f"Ошибка вызова API: {e}")
         return "Извините, произошла ошибка при обращении к сервису."
 
@@ -142,7 +187,7 @@ def main():
     try:
         logging.info("Подключение к IMAP...")
         imap = imaplib.IMAP4_SSL(IMAP_HOST, 993)
-        imap.login(IMAP_USER, IMAP_PASS)
+        imap.login(IMAP_USER, IMAP_PASSWORD)
         imap.select('INBOX')
 
         status, data = imap.search(None, 'UNSEEN')
@@ -190,10 +235,10 @@ def main():
             body = ""
 
         logging.info(f"Вызов Yandex API для письма от {from_addr}")
-        api_response = call_yandex_responses_api(body, API_KEY)
+        api_response = call_yandex_responses_api(body)
 
         reply_msg = MIMEMultipart()
-        reply_msg['From'] = SMTP_USER
+        reply_msg['From'] = HELPDESK_MAILBOX
         reply_msg['To'] = from_addr
         reply_msg['Subject'] = reply_subject
 
@@ -203,8 +248,8 @@ def main():
         reply_msg.attach(MIMEText(reply_text, 'plain', 'utf-8'))
 
         logging.info(f"Отправка ответа на {from_addr}")
-        with smtplib.SMTP_SSL(SMTP_HOST, 465) as smtp:
-            smtp.login(SMTP_USER, SMTP_PASS)
+        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT) as smtp:
+            smtp.login(SMTP_USER, SMTP_PASSWORD)
             smtp.send_message(reply_msg)
 
         imap.store(num, '+FLAGS', '\\Seen')
@@ -216,6 +261,15 @@ def main():
 
     except Exception as e:
         logging.error(f"Критическая ошибка: {e}")
+
+
+def handle(event, context):
+    main()
+    return {
+        "statusCode": 200,
+        "headers": {"Content-Type": "application/json"},
+        "body": json.dumps({"ok": True}),
+    }
 
 
 if __name__ == "__main__":
