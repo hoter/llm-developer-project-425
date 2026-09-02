@@ -63,6 +63,7 @@ MCP_SERVER_URL = os.getenv(
     'MCP_SERVER_URL',
     'https://db818p5vs9tr2fb1rdtj.5p9km096.mcpgw.serverless.yandexcloud.net/sse',
 )
+SEARCH_INDEX_ID = os.getenv('SEARCH_INDEX_ID', 'fvtv4t93cpot0rcrmv4a')
 
 logging.basicConfig(
     level=logging.INFO,
@@ -150,13 +151,19 @@ def call_yandex_responses_api(text, sender_email):
         base_url="https://ai.api.cloud.yandex.net/v1",
         timeout=60,
     )
-    tools = [{
-        "type": "mcp",
-        "server_label": "ydb-tickets",
-        "server_description": "Тикеты техподдержки: создать заявку, список заявок, добавить сообщение",
-        "server_url": MCP_SERVER_URL,
-        "require_approval": "never",
-    }]
+    tools = [
+        {
+            "type": "file_search",
+            "vector_store_ids": [SEARCH_INDEX_ID],
+        },
+        {
+            "type": "mcp",
+            "server_label": "ydb-tickets",
+            "server_description": "Тикеты техподдержки: создать заявку, список заявок, добавить сообщение",
+            "server_url": MCP_SERVER_URL,
+            "require_approval": "never",
+        },
+    ]
     try:
         logging.warning("Responses API: model=%s tools=%d server_url=%s",
                         f"gpt://{YC_FOLDER_ID}/yandexgpt/latest", len(tools), MCP_SERVER_URL)
