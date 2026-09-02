@@ -107,16 +107,100 @@ Lockbox). Сдача — репозиторий с конфигами и раб�
 
 ## Установка
 
-<!-- Опишите установку: клонирование, зависимости, переменные окружения -->
+Полное разворачивание занимает примерно 15 минут. Нужен `yc` CLI (авторизованный профиль), каталог в Yandex Cloud и SA с ролями из раздела «Роли SA».
 
 ```bash
 git clone https://github.com/hoter/llm-developer-project-425.git
 cd llm-developer-project-425
+
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r src/requirements.txt
+
+cp .env.example .env   # заполнить значения (см. ниже)
+```
+
+Переменные из `.env` (без значений — в `.env.example`): SMTP/IMAP-доступы к Help Desk-ящику, `YC_FOLDER_ID`, `SEARCH_INDEX_ID`, `MCP_SERVER_URL`. Пароли почты и API-ключи хранятся только в Yandex Lockbox и подключаются к функциям через `--secret`.
+
+**1. YDB-база и таблицы.** Создайте базу YDB Serverless в консоли (или `yc ydb database create`) и выполните DDL из `src/ydb_tickets/schema.sql` (`scripts/init_schema.py` или UI → Query). Кладём в Lockbox секреты `ydb-endpoint`, `ydb-database`.
+
+**2. Cloud Function тикетов** из `src/ydb_tickets/`:
+```bash
+cd src/ydb_tickets && zip -j /tmp/ydb-tickets.zip index.py requirements.txt && cd ../..
+yc serverless function version create --function-name ydb-tickets \
+  --runtime python312 --entrypoint index.handle --memory 256m --execution-timeout 30s \
+  --source-path /tmp/ydb-tickets.zip --service-account-id <SA_ID> \
+  --environment YC_FOLDER_ID=<folder_id> \
+  --secret environment-variable=YDB_ENDPOINT,name=ydb-endpoint,key=value \
+  --secret environment-variable=YDB_DATABASE,name=ydb-database,key=value
+```
+
+**3. MCP Hub gateway** с 3 инструментами из `src/ydb_tickets/mcp-tools.yaml`:
+```bash
+yc serverless mcp-gateway create --name ydb-tickets-mcp \
+  --service-account-id <SA_ID> --tools-file src/ydb_tickets/mcp-tools.yaml
+```
+
+**4. Search index (RAG)** и подключение к поллеру:
+```bash
+export YC_FOLDER_ID=<folder_id>; export YC_IAM_TOKEN=$(yc iam create-token)
+yandex-ai-studio vector-stores local docs/*.md --name help-desk-kb
+```
+Полученный `search_index_id` → в `.env`/`--environment SEARCH_INDEX_ID` поллера.
+
+**5. CF `email-sender`** (SMTP-обёртка для workflow, env `OPERATOR_EMAIL` = адрес оператора) из `src/email_sender.py` + `allow-unauthenticated-invoke`.
+
+**6. CF `email-poller`** (entrypoint `email_poller.handle`, IMAP/SMTP из env, пароли — `--secret` из Lockbox, `SEARCH_INDEX_ID`) из `src/email_poller.py` + `requirements.txt` + `agent_instructions.md`. Запуск — таймером (раз в минуту) или вызовом функции.
+
+**7. Workflow авто-эскалации** из `src/workflow.yaml`:
+```bash
+yc serverless workflow create --name daily-escalation --yaml-spec src/workflow.yaml \
+  --service-account-id <SA_ID>
+yc serverless workflow update --name daily-escalation --yaml-spec src/workflow.yaml \
+  --schedule-cron-expression "0 9 * * * *" --schedule-timezone Europe/Moscow
+yc serverless workflow add-access-binding --name daily-escalation \
+  --role serverless.workflows.executor --service-account-id <SA_ID>
+yc serverless workflow add-access-binding --name daily-escalation \
+  --role serverless.workflows.viewer --service-account-id <SA_ID>
 ```
 
 ## Использование
 
-<!-- Добавьте примеры запуска и запись asciinema — именно это смотрит работодатель -->
+Основной сценарий — по почте: отправьте письмо на `interesFAQ@yandex.ru` с вопросом или проблемой.
+Ответ приходит в течение ~60 секунд (pull-режим: поллер забирает почту раз в минуту).
+Готовые проверочные сообщения — в разделе «Что попробовать».
+
+Поток: агент отвечает из базы знаний (RAG / `file_search`); при обращении вне базы или нерешённой проблеме
+создаётся тикет в YDB (MCP `ydb-tickets`); история диалога и токены сохраняются в `messages`;
+workflow `daily-escalation` по расписанию присылает оператору дайджест просроченных заявок.
+
+### Проверка и наблюдение
+
+Заявки пользователя (прямой вызов CF `ydb-tickets`):
+```bash
+yc serverless function invoke ydb-tickets \
+  --data '{"action":"list-my-tickets","user_id":"someone@example.com"}'
+```
+
+Данные в YDB (тикеты, история, токены):
+```bash
+# статусы тикетов
+#   SELECT status, COUNT(*) FROM tickets GROUP BY status;
+# история и токены (messages.tokens_in/out == usage из Responses API)
+#   SELECT ticket_id, role, tokens_in, tokens_out FROM messages ORDER BY created_at DESC;
+```
+
+Логи и трейсы компонентов (email-poller, MCP gateway, workflow) — команды в `tracing/README.md`;
+собранные трейсы и скриншоты — в `tracing/` и `screenshots/`.
+
+### Локальный запуск поллера (для разработки)
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r src/requirements.txt
+python src/email_poller.py
+```
+> Поллер рассчитан на запуск в Cloud Functions: свежий IAM-токен берётся из metadata service SA.
+> Локально нужны переменные из `.env` (SMTP/IMAP, `YC_FOLDER_ID`, `SEARCH_INDEX_ID`) и доступ к IMAP-ящику.
 
 ---
 
@@ -126,10 +210,6 @@ cd llm-developer-project-425
 Тесты запускаются на каждый коммит. За запуск отвечает файл `.github/workflows/hexlet-check.yml` — не удаляйте и не переименовывайте ни его, ни репозиторий.
 
 </details>
-
-## О Хекслете
-
-[Хекслет](https://ru.hexlet.io/) — школа программирования: авторские программы обучения с практикой, поддержкой наставников и реальными проектами, которые остаются в резюме. Этот репозиторий — один из таких проектов.
 
 ## Секреты в Lockbox
 - ydb-endpoint
@@ -211,3 +291,7 @@ cd llm-developer-project-425
 - `screenshots/` — скриншоты из консоли: AI Studio **Traces** сохранённого агента, таблицы YDB и т.п.
 
 Для сохранённого агента трейсы — вкладка **Traces** в AI Studio; для inline-вызовов поллера — массив `output[]` ответа Responses API (`mcp_list_tools`, `mcp_call`, `message`).
+
+## О Хекслете
+
+[Хекслет](https://ru.hexlet.io/) — школа программирования: авторские программы обучения с практикой, поддержкой наставников и реальными проектами, которые остаются в резюме. Этот репозиторий — один из таких проектов.
