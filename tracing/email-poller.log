@@ -1,0 +1,11 @@
+# email-poller trace (inline Responses API) — create-ticket flow
+# окно: 2026-09-02 14:20–14:40 UTC
+# команда: yc logging read --group-name default --resource-ids <email-poller CF id> --since ...
+# (GOT_UNSEEN/AGENT_OK/SEND_OK — это INFO-логи поллера; в логах CF видны WARNING+ => ниже только диагностика Responses API)
+
+2026-09-02 14:29:14  INFO START RequestID: eb9b0f11-a670-4ded-b71f-8a8a5ca4564b Version: d4e5j24km6c7qjscb55b
+2026-09-02 14:29:16 TRACE [WARNING]	2026-09-02T14:29:16.380Z	eb9b0f11-a670-4ded-b71f-8a8a5ca4564b	Responses API: model=gpt://b1g8f2hr7nk1mt1jeoqd/yandexgpt/latest tools=2 server_url=https://db818p5vs9tr2fb1rdtj.5p9km096.mcpgw.serverless.yandexcloud.net/sse
+2026-09-02 14:29:22 TRACE [WARNING]	2026-09-02T14:29:22.389Z	eb9b0f11-a670-4ded-b71f-8a8a5ca4564b	Responses output: [{'type': 'mcp_list_tools'}, {'type': 'mcp_call', 'name': 'create-ticket'}, {'type': 'message', 'text': None}]
+2026-09-02 14:29:22 TRACE [WARNING]	2026-09-02T14:29:22.389Z	eb9b0f11-a670-4ded-b71f-8a8a5ca4564b	Responses final text: Заявка № 342e8513-50f0-4653-908b-b1f13dcdeb5c. Пожалуйста, укажите модель принтера и номер кабинета.
+2026-09-02 14:29:22  INFO END RequestID: eb9b0f11-a670-4ded-b71f-8a8a5ca4564b
+2026-09-02 14:29:22  INFO REPORT RequestID: eb9b0f11-a670-4ded-b71f-8a8a5ca4564b Duration: 8506.735 ms Billed Duration: 8600 ms Memory Size: 256 MB Max Memory Used: 167 MB Queuing Duration: 0.063 ms Function Init Duration: 1643.075 ms

@@ -65,6 +65,16 @@ def _require(data, name):
     return value
 
 
+def _iso_timestamp(value):
+    if isinstance(value, datetime.datetime):
+        return value.isoformat()
+    if isinstance(value, (int, float)):
+        return datetime.datetime.fromtimestamp(
+            value / 1_000_000, tz=datetime.timezone.utc
+        ).isoformat()
+    return str(value)
+
+
 # ---------- PII-маскирование (перед записью в YDB) ----------
 _PHONE_RE = re.compile(r'(?<!\d)(?:\+7|8)[\s\-]?\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}')
 _EMAIL_RE = re.compile(r'[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}')
@@ -236,7 +246,7 @@ def _list_my_tickets(data):
             "status": row.status,
             "category": row.category,
             "text": row.text,
-            "created_at": row.created_at.isoformat(),
+            "created_at": _iso_timestamp(row.created_at),
         }
         for row in rows
     ]

@@ -1,0 +1,12 @@
+# MCP gateway ydb-tickets-mcp trace (create-ticket tool call)
+# окно: 2026-09-02 14:28–14:30 UTC
+# команда: yc logging read --group-name default --resource-ids <mcp-gateway id> --since ...
+
+2026-09-02 14:29:17  INFO MCP session started
+2026-09-02 14:29:17  INFO Tools listed
+2026-09-02 14:29:17  INFO MCP session finished
+2026-09-02 14:29:18  INFO MCP session started
+2026-09-02 14:29:18  INFO Tool call started
+2026-09-02 14:29:21  INFO Tool call finished
+2026-09-02 14:29:21  INFO MCP session finished
+

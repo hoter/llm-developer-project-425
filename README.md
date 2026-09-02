@@ -16,7 +16,40 @@ Lockbox). Сдача — репозиторий с конфигами и раб�
 
 ## Стек
 
-- Разное
+**Язык и платформа**
+- Python 3.12; локальный venv (`.venv`); Yandex Cloud Functions (Serverless).
+
+**ИИ / Yandex AI Studio**
+- Responses API (клиент `openai`, base `ai.api.cloud.yandex.net/v1`, авторизация IAM-токеном SA);
+- `yandexgpt/latest` — агент Help Desk (инлайн-вызов из почтового поллера);
+- `yandexgpt-lite` — LLM-классификатор guardrail (safe | injection | off-topic);
+- RAG: Vector Store / search index `help-desk-kb` (`docs/`), инструмент `file_search`;
+- Правила модерации AI Studio (токсичность/PII) — на сохранённом агенте.
+
+**MCP Hub**
+- gateway `ydb-tickets-mcp`: 3 инструмента — `create-ticket`, `list-my-tickets`, `append-message`; каждый вызывает CF `ydb-tickets`.
+
+**Хранилище и секреты**
+- YDB Serverless: таблицы `tickets`, `messages` (пакет `ydb`, prepared statements);
+- Yandex Lockbox: `ydb-endpoint`, `ydb-database`, `email-credentials`, `SMTP_PASSWORD`/`IMAP_PASSWORD`, `ai-studio-api-key`.
+
+**Почта (pull-режим)**
+- CF `email-poller` (по таймеру: IMAP-забор → агент → SMTP-ответ; Yandex Mail);
+- CF `email-sender` — SMTP-обёртка для Workflows (httpCall → письмо оператору).
+
+**Оркестрация**
+- Yandex Workflows (YaWL 0.1): `daily-escalation` — `databaseQuery` → `switch` → `aiStudioAgent` → `databaseQuery` → `httpCall`; cron 09:00 (Europe/Moscow).
+
+**Безопасность**
+- Guardrail на границе записи в CF `ydb-tickets`: regex-предфильтр + `yandexgpt-lite`, fail-open; `ALERT_INJECTION_BLOCKED`/`ALERT_OFFTOPIC`;
+- PII-маскирование перед записью в YDB (телефон/email/карта);
+- Trusted vs Untrusted-контекст; логи без сырого PII.
+
+**Наблюдаемость**
+- Yandex Cloud Logging: логи CF и трейсы Workflows (`yc logging read`).
+
+**Инструменты**
+- `yc` CLI; `yandex-ai-studio` CLI и `yandex_ai_studio_sdk` (search index, vector stores).
 
 ## Установка
 
@@ -91,3 +124,28 @@ cd llm-developer-project-425
 - serverless.mcpGateways.invoker
 - functions.functionInvoker
 - ai.editor
+
+## Трейсинг и скриншоты
+
+Наблюдаемость решения: трейсы/логи каждого компонента + скриншоты для сдачи.
+
+- `tracing/` — собранные трейсы:
+  - `email-poller.log` — почтовый агент (inline Responses API: `mcp_list_tools`, `mcp_call create-ticket`, финальный текст);
+  - `mcp-gateway.log` — MCP gateway `ydb-tickets-mcp` (`MCP session started`, `Tools listed`, `Tool call started/finished`);
+  - `daily-escalation_execution.json` — результат выполнения workflow (`result.result_json`);
+  - `README.md` — команды снятия каждого трейса.
+- `screenshots/` — скриншоты из консоли: AI Studio **Traces** сохранённого агента, таблицы YDB и т.п.
+
+Как снимать:
+
+```bash
+# email-poller (CF)
+yc logging read --group-name default --resource-ids <CF_ID_email-poller> --since 30m --limit 100
+# MCP gateway
+yc logging read --group-name default --resource-ids <MCP_GW_ID> --since 30m
+# workflow daily-escalation
+yc serverless workflow execution list --workflow-name daily-escalation
+yc serverless workflow execution get <execution_id>
+```
+
+Для сохранённого агента трейсы — вкладка **Traces** в AI Studio; для inline-вызовов поллера — массив `output[]` ответа Responses API (`mcp_list_tools`, `mcp_call`, `message`).

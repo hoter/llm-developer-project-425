@@ -1,0 +1,16 @@
+{
+  "execution": {
+    "id": "dfqm2rafrv630d7f65q7-schedule-2026-09-02T14:09:00Z",
+    "workflow_id": "dfqm2rafrv630d7f65q7",
+    "input": {
+      "input_json": "{}"
+    },
+    "result": {
+      "result_json": "{\"ResultSets\":[[]]}"
+    },
+    "status": "FINISHED",
+    "started_at": "2026-09-02T14:09:00.285792699Z",
+    "duration": "1.610996316s"
+  }
+}
+
