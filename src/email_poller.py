@@ -184,11 +184,36 @@ def call_yandex_responses_api(text, sender_email):
                 entry["text"] = getattr(item, "output_text", None)
             summary.append(entry)
         logging.warning("Responses output: %s", summary)
-        logging.warning("Responses final text: %s", (response.output_text or "")[:500])
-        return response.output_text
+        reply = response.output_text or ""
+        for item in getattr(response, 'output', []):
+            if getattr(item, 'type', None) != 'mcp_call' or getattr(item, 'name', None) != 'create-ticket':
+                continue
+            ticket_id = _ticket_id_from_mcp_output(getattr(item, 'output', None))
+            if ticket_id and ticket_id not in reply:
+                reply = reply.rstrip() + f"\n\nЗаявка № {ticket_id}"
+        logging.warning("Responses final text: %s", reply[:500])
+        return reply
     except Exception as e:
         logging.error(f"Ошибка вызова API: {e}")
         return "Извините, произошла ошибка при обращении к сервису."
+
+
+def _ticket_id_from_mcp_output(raw):
+    if not raw:
+        return None
+    try:
+        payload = json.loads(raw)
+    except Exception:
+        return None
+    body = payload.get('body') if isinstance(payload, dict) else None
+    if isinstance(body, str):
+        try:
+            body = json.loads(body)
+        except Exception:
+            body = {}
+    if isinstance(body, dict):
+        return body.get('ticket_id')
+    return None
 
 
 def main():
