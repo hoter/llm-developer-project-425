@@ -52,10 +52,10 @@ def get_required_env(name):
 
 SMTP_HOST = get_required_env('SMTP_HOST')
 SMTP_USER = get_required_env('SMTP_USER')
-SMTP_PASSWORD = get_required_env('SMTP_PASSWORD')
+SMTP_PASSWORD = os.environ['SMTP_PASSWORD']
 IMAP_HOST = get_required_env('IMAP_HOST')
 IMAP_USER = get_required_env('IMAP_USER')
-IMAP_PASSWORD = get_required_env('IMAP_PASSWORD')
+IMAP_PASSWORD = os.environ['IMAP_PASSWORD']
 YC_FOLDER_ID = get_required_env('YC_FOLDER_ID')
 SMTP_PORT = int(os.getenv('SMTP_PORT', '465'))
 HELPDESK_MAILBOX = os.getenv('HELPDESK_MAILBOX', SMTP_USER)
