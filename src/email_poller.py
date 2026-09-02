@@ -142,7 +142,7 @@ def _get_iam_token():
     return data["access_token"]
 
 
-def call_yandex_responses_api(text):
+def call_yandex_responses_api(text, sender_email):
     iam_token = _get_iam_token()
     client = openai.OpenAI(
         api_key=iam_token,
@@ -160,11 +160,12 @@ def call_yandex_responses_api(text):
     try:
         logging.warning("Responses API: model=%s tools=%d server_url=%s",
                         f"gpt://{YC_FOLDER_ID}/yandexgpt/latest", len(tools), MCP_SERVER_URL)
+        prompt_text = f"Отправитель (email): {sender_email}\n\nОбращение:\n{text}"
         response = client.responses.create(
             model=f"gpt://{YC_FOLDER_ID}/yandexgpt/latest",
             instructions=load_system_prompt(),
             tools=tools,
-            input=text,
+            input=prompt_text,
         )
         summary = []
         for item in getattr(response, 'output', []):
@@ -235,7 +236,7 @@ def main():
             body = ""
 
         logging.info(f"Вызов Yandex API для письма от {from_addr}")
-        api_response = call_yandex_responses_api(body)
+        api_response = call_yandex_responses_api(body, from_addr)
 
         reply_msg = MIMEMultipart()
         reply_msg['From'] = HELPDESK_MAILBOX
