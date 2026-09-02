@@ -63,7 +63,7 @@ MCP_SERVER_URL = os.getenv(
     'MCP_SERVER_URL',
     'https://db818p5vs9tr2fb1rdtj.5p9km096.mcpgw.serverless.yandexcloud.net/sse',
 )
-SEARCH_INDEX_ID = os.getenv('SEARCH_INDEX_ID', 'fvtv4t93cpot0rcrmv4a')
+SEARCH_INDEX_ID = os.getenv('SEARCH_INDEX_ID', 'fvteblqas5msk531frfp')
 
 logging.basicConfig(
     level=logging.INFO,
