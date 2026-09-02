@@ -112,6 +112,17 @@ cd llm-developer-project-425
 
 `require_approval: "never"` для MCP-tools отключено ради автоматизации; компенсируется guardrail'ом на границе записи.
 
+## Учёт токенов
+
+При каждом ответе модели из Responses API снимается поле `usage` (`input_tokens`, `output_tokens`) и передаётся в `append-message` при записи ответа агента в таблицу `messages` (`tokens_in`/`tokens_out`).
+
+- Поллер (`email-poller`) после ответа модели:
+  - логирует `USAGE in=… out=…`;
+  - если в этом ходе создан тикет (`mcp_call create-ticket`) — дописывает ответ агента в историю: `append-message` (`role=agent`, `text`=ответ, `model`, `tokens_in`=`usage.input_tokens`, `tokens_out`=`usage.output_tokens`);
+  - вызывает CF `ydb-tickets` напрямую по IAM-токену SA.
+- Сверка: `usage` из трейса == `messages.tokens_in/tokens_out` (значение передаётся как есть — расхождение ≤10% гарантировано; на практике 0%).
+- Таблица `messages` хранит `tokens_in`/`tokens_out`/`model`/`latency_ms` для записей `role=agent` — для разбора и учёта токенов (модель сама токены не знает, их снимает поллер).
+
 ## Роли SA
 - lockbox.payloadViewer
 - ai.languageModels.user
