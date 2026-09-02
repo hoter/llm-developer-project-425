@@ -64,6 +64,10 @@ MCP_SERVER_URL = os.getenv(
     'https://db818p5vs9tr2fb1rdtj.5p9km096.mcpgw.serverless.yandexcloud.net/sse',
 )
 SEARCH_INDEX_ID = os.getenv('SEARCH_INDEX_ID', 'fvteblqas5msk531frfp')
+YDB_TICKETS_URL = os.getenv(
+    'YDB_TICKETS_URL',
+    'https://functions.yandexcloud.net/d4er4gsa6mdim8sqfgf7',
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -184,13 +188,27 @@ def call_yandex_responses_api(text, sender_email):
                 entry["text"] = getattr(item, "output_text", None)
             summary.append(entry)
         logging.warning("Responses output: %s", summary)
+
+        usage = getattr(response, 'usage', None)
+        tokens_in = getattr(usage, 'input_tokens', None) if usage is not None else None
+        tokens_out = getattr(usage, 'output_tokens', None) if usage is not None else None
+        if tokens_in is not None:
+            logging.warning("USAGE in=%s out=%s", tokens_in, tokens_out)
+
         reply = response.output_text or ""
+        created_ticket_id = None
         for item in getattr(response, 'output', []):
             if getattr(item, 'type', None) != 'mcp_call' or getattr(item, 'name', None) != 'create-ticket':
                 continue
-            ticket_id = _ticket_id_from_mcp_output(getattr(item, 'output', None))
-            if ticket_id and ticket_id not in reply:
-                reply = reply.rstrip() + f"\n\nЗаявка № {ticket_id}"
+            tid = _ticket_id_from_mcp_output(getattr(item, 'output', None))
+            if tid:
+                created_ticket_id = tid
+                break
+        if created_ticket_id and created_ticket_id not in reply:
+            reply = reply.rstrip() + f"\n\nЗаявка № {created_ticket_id}"
+        if created_ticket_id and tokens_in is not None and tokens_out is not None:
+            _record_agent_message(iam_token, created_ticket_id, reply,
+                                  tokens_in, tokens_out, f"gpt://{YC_FOLDER_ID}/yandexgpt/latest")
         logging.warning("Responses final text: %s", reply[:500])
         return reply
     except Exception as e:
@@ -198,22 +216,40 @@ def call_yandex_responses_api(text, sender_email):
         return "Извините, произошла ошибка при обращении к сервису."
 
 
+def _record_agent_message(iam_token, ticket_id, text, tokens_in, tokens_out, model):
+    body = json.dumps({
+        "action": "append-message",
+        "ticket_id": ticket_id,
+        "role": "agent",
+        "text": text,
+        "model": model,
+        "tokens_in": tokens_in,
+        "tokens_out": tokens_out,
+    }).encode('utf-8')
+    req = urllib.request.Request(
+        YDB_TICKETS_URL,
+        data=body,
+        headers={"Authorization": f"Bearer {iam_token}", "Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            raw = resp.read().decode('utf-8')
+        logging.warning("APPENDED agent message ticket=%s tokens_in=%s tokens_out=%s resp=%s",
+                        ticket_id, tokens_in, tokens_out, raw[:120])
+    except Exception as e:
+        logging.error("Append agent message failed: %s", e)
+
+
 def _ticket_id_from_mcp_output(raw):
     if not raw:
         return None
-    try:
-        payload = json.loads(raw)
-    except Exception:
-        return None
-    body = payload.get('body') if isinstance(payload, dict) else None
-    if isinstance(body, str):
-        try:
-            body = json.loads(body)
-        except Exception:
-            body = {}
-    if isinstance(body, dict):
-        return body.get('ticket_id')
-    return None
+    s = raw if isinstance(raw, str) else json.dumps(raw, ensure_ascii=False)
+    m = re.search(
+        r'"ticket_id"\s*:\s*"([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})"',
+        s,
+    )
+    return m.group(1) if m else None
 
 
 def main():
