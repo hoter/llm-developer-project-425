@@ -152,6 +152,7 @@ cd llm-developer-project-425
   - `email-poller.log` — почтовый агент (inline Responses API: `mcp_list_tools`, `mcp_call create-ticket`, финальный текст);
   - `mcp-gateway.log` — MCP gateway `ydb-tickets-mcp` (`MCP session started`, `Tools listed`, `Tool call started/finished`);
   - `daily-escalation_execution.json` — результат выполнения workflow (`result.result_json`);
+  - `negative-scenarios.md` — проверка негативных сценариев (injection, обращение вне базы, недоступность YDB, PII-маскирование);
   - `README.md` — команды снятия каждого трейса.
 - `screenshots/` — скриншоты из консоли: AI Studio **Traces** сохранённого агента, таблицы YDB и т.п.
 
