@@ -123,6 +123,14 @@ cd llm-developer-project-425
 - Сверка: `usage` из трейса == `messages.tokens_in/tokens_out` (значение передаётся как есть — расхождение ≤10% гарантировано; на практике 0%).
 - Таблица `messages` хранит `tokens_in`/`tokens_out`/`model`/`latency_ms` для записей `role=agent` — для разбора и учёта токенов (модель сама токены не знает, их снимает поллер).
 
+Полная картина по последним записям:
+
+| Тикет | Источник | usage (лог поллера) | messages (in/out) | Совпало |
+|---|---|---|---|---|
+| `d50bdb24` | письмо (end-to-end) | in=2159, out=86 | 2159 / 86 | ✅ (0%) |
+| `90cbc81f` | тест | in=2017, out=99 | 2017 / 99 | ✅ (0%) |
+| `fd54ddff` | тест | in=2017, out=101 | 2017 / 101 | ✅ (0%) |
+
 ## Роли SA
 - lockbox.payloadViewer
 - ai.languageModels.user
@@ -146,17 +154,5 @@ cd llm-developer-project-425
   - `daily-escalation_execution.json` — результат выполнения workflow (`result.result_json`);
   - `README.md` — команды снятия каждого трейса.
 - `screenshots/` — скриншоты из консоли: AI Studio **Traces** сохранённого агента, таблицы YDB и т.п.
-
-Как снимать:
-
-```bash
-# email-poller (CF)
-yc logging read --group-name default --resource-ids <CF_ID_email-poller> --since 30m --limit 100
-# MCP gateway
-yc logging read --group-name default --resource-ids <MCP_GW_ID> --since 30m
-# workflow daily-escalation
-yc serverless workflow execution list --workflow-name daily-escalation
-yc serverless workflow execution get <execution_id>
-```
 
 Для сохранённого агента трейсы — вкладка **Traces** в AI Studio; для inline-вызовов поллера — массив `output[]` ответа Responses API (`mcp_list_tools`, `mcp_call`, `message`).
