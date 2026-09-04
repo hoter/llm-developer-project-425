@@ -59,6 +59,7 @@ IMAP_PASSWORD = os.environ['IMAP_PASSWORD']
 YC_FOLDER_ID = get_required_env('YC_FOLDER_ID')
 SMTP_PORT = int(os.getenv('SMTP_PORT', '465'))
 HELPDESK_MAILBOX = os.getenv('HELPDESK_MAILBOX', SMTP_USER)
+SELF_ADDRESSES = {SMTP_USER.lower(), HELPDESK_MAILBOX.lower()}
 MCP_SERVER_URL = os.getenv(
     'MCP_SERVER_URL',
     'https://db818p5vs9tr2fb1rdtj.5p9km096.mcpgw.serverless.yandexcloud.net/sse',
@@ -290,6 +291,13 @@ def main():
         from_name, from_addr = parseaddr(from_header)
         if not from_addr:
             logging.warning(f"Нет отправителя для письма {num_str}, пропускаем и помечаем прочитанным.")
+            imap.store(num, '+FLAGS', '\\Seen')
+            imap.close()
+            imap.logout()
+            return
+
+        if from_addr.lower() in SELF_ADDRESSES:
+            logging.warning("Письмо от собственного адреса %s — пропускаем (защита от loop)", from_addr)
             imap.store(num, '+FLAGS', '\\Seen')
             imap.close()
             imap.logout()
